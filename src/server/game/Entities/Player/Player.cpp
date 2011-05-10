@@ -635,6 +635,8 @@ Player::Player (WorldSession *session): Unit(), m_achievementMgr(this), m_reputa
     m_globalCooldowns.clear();
 
     m_ConditionErrorMsgId = 0;
+
+    SetPendingBind(NULL, 0);
 }
 
 Player::~Player ()
@@ -1120,6 +1122,9 @@ void Player::HandleDrowning(uint32 time_diff)
     // In water
     if (m_MirrorTimerFlags & UNDERWATER_INWATER)
     {
+		if (m_zoneUpdateId == 5144) return;
+        if (m_zoneUpdateId == 5145) return;
+        if (m_zoneUpdateId == 4815) return;
         // Breath timer not activated - activate it
         if (m_MirrorTimer[BREATH_TIMER] == DISABLED_MIRROR_TIMER)
         {
@@ -1156,6 +1161,9 @@ void Player::HandleDrowning(uint32 time_diff)
     // In dark water
     if (m_MirrorTimerFlags & UNDERWARER_INDARKWATER)
     {
+		if (m_zoneUpdateId == 5144) return;
+        if (m_zoneUpdateId == 5145) return;
+        if (m_zoneUpdateId == 4815) return;
         // Fatigue timer not activated - activate it
         if (m_MirrorTimer[FATIGUE_TIMER] == DISABLED_MIRROR_TIMER)
         {
@@ -1539,6 +1547,17 @@ void Player::Update(uint32 p_time)
             HandleSobering();
     }
 
+    if (HasPendingBind())
+    {
+        if (_pendingBindTimer <= p_time)
+        {
+            BindToInstance();
+            SetPendingBind(NULL, 0);
+        }
+        else
+            _pendingBindTimer -= p_time;
+    }
+
     // not auto-free ghost from body in instances
     if (m_deathTimer > 0 && !GetBaseMap()->Instanceable())
     {
@@ -1554,6 +1573,17 @@ void Player::Update(uint32 p_time)
 
     UpdateEnchantTime(p_time);
     UpdateHomebindTime(p_time);
+
+    if (!_instanceResetTimes.empty())
+    {
+        for (InstanceTimeMap::iterator itr = _instanceResetTimes.begin(); itr != _instanceResetTimes.end();)
+        {
+            if (itr->second < now)
+                _instanceResetTimes.erase(itr++);
+            else
+                ++itr;
+        }
+    }
 
     // group update
     SendUpdateToOutOfRangeGroupMembers();
@@ -1724,7 +1754,7 @@ bool Player::BuildEnumData(QueryResult result, WorldPacket * p_data)
             if (cInfo)
             {
                 petDisplayId = fields[17].GetUInt32();
-                petLevel     = fields[18].GetUInt32();
+                petLevel     = fields[18].GetUInt16();
                 petFamily    = cInfo->family;
             }
         }
@@ -1998,7 +2028,7 @@ bool Player::TeleportTo(uint32 mapid, float x, float y, float z, float orientati
         // If the map is not created, assume it is possible to enter it.
         // It will be created in the WorldPortAck.
         Map *map = sMapMgr->FindMap(mapid);
-        if (!map ||  map->CanEnter(this))
+        if (!map || map->CanEnter(this))
         {
             //lets reset near teleport flag if it wasn't reset during chained teleports
             SetSemaphoreTeleportNear(false);
@@ -3029,10 +3059,11 @@ void Player::InitStatsForLevel(bool reapplyMods)
     // cleanup unit flags (will be re-applied if need at aura load).
     RemoveFlag(UNIT_FIELD_FLAGS,
         UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_DISABLE_MOVE | UNIT_FLAG_NOT_ATTACKABLE_1 |
+		UNIT_FLAG_OOC_NOT_ATTACKABLE | UNIT_FLAG_PASSIVE  | UNIT_FLAG_LOOTING          |
         UNIT_FLAG_PET_IN_COMBAT  | UNIT_FLAG_SILENCED     | UNIT_FLAG_PACIFIED         |
         UNIT_FLAG_STUNNED        | UNIT_FLAG_IN_COMBAT    | UNIT_FLAG_DISARMED         |
         UNIT_FLAG_CONFUSED       | UNIT_FLAG_FLEEING      | UNIT_FLAG_NOT_SELECTABLE   |
-        UNIT_FLAG_SKINNABLE      | UNIT_FLAG_MOUNT        | UNIT_FLAG_TAXI_FLIGHT);
+        UNIT_FLAG_SKINNABLE      | UNIT_FLAG_MOUNT        | UNIT_FLAG_TAXI_FLIGHT      );
     SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PVP_ATTACKABLE);   // must be set
 
     SetFlag(UNIT_FIELD_FLAGS_2,UNIT_FLAG2_REGENERATE_POWER);// must be set
@@ -4043,7 +4074,7 @@ void Player::_LoadSpellCooldowns(PreparedQueryResult result)
             Field* fields = result->Fetch();
             uint32 spell_id = fields[0].GetUInt32();
             uint32 item_id  = fields[1].GetUInt32();
-            time_t db_time  = (time_t)fields[2].GetUInt64();
+            time_t db_time  = time_t(fields[2].GetUInt32());
 
             if (!sSpellStore.LookupEntry(spell_id))
             {
@@ -4755,7 +4786,7 @@ void Player::DeleteOldCharacters(uint32 keepDays)
 {
     sLog->outString("Player::DeleteOldChars: Deleting all characters which have been deleted %u days before...", keepDays);
 
-    QueryResult resultChars = CharacterDatabase.PQuery("SELECT guid, deleteInfos_Account FROM characters WHERE deleteDate IS NOT NULL AND deleteDate < '" UI64FMTD "'", uint64(time(NULL) - time_t(keepDays * DAY)));
+    QueryResult resultChars = CharacterDatabase.PQuery("SELECT guid, deleteInfos_Account FROM characters WHERE deleteDate IS NOT NULL AND deleteDate < '%u'", uint32(time(NULL) - time_t(keepDays * DAY)));
     if (resultChars)
     {
          sLog->outString("Player::DeleteOldChars: Found " UI64FMTD " character(s) to delete",resultChars->GetRowCount());
@@ -7136,7 +7167,7 @@ uint32 Player::GetZoneIdFromDB(uint64 guid)
     if (!result)
         return 0;
     Field* fields = result->Fetch();
-    uint32 zone = fields[0].GetUInt32();
+    uint32 zone = fields[0].GetUInt16();
 
     if (!zone)
     {
@@ -7145,7 +7176,7 @@ uint32 Player::GetZoneIdFromDB(uint64 guid)
         if (!result)
             return 0;
         fields = result->Fetch();
-        uint32 map = fields[0].GetUInt32();
+        uint32 map = fields[0].GetUInt16();
         float posx = fields[1].GetFloat();
         float posy = fields[2].GetFloat();
         float posz = fields[3].GetFloat();
@@ -14343,7 +14374,7 @@ void Player::PrepareQuestMenu(uint64 guid)
     {
         uint32 quest_id = i->second;
         QuestStatus status = GetQuestStatus(quest_id);
-        if (status == QUEST_STATUS_COMPLETE && !GetQuestRewardStatus(quest_id))
+        if (status == QUEST_STATUS_COMPLETE)
             qm.AddMenuItem(quest_id, 4);
         else if (status == QUEST_STATUS_INCOMPLETE)
             qm.AddMenuItem(quest_id, 4);
@@ -15493,7 +15524,7 @@ QuestStatus Player::GetQuestStatus(uint32 quest_id) const
 
         if (Quest const* qInfo = sObjectMgr->GetQuestTemplate(quest_id))
             if (!qInfo->IsRepeatable() && m_RewardedQuests.find(quest_id) != m_RewardedQuests.end())
-                return QUEST_STATUS_COMPLETE;
+                return QUEST_STATUS_REWARDED;
     }
     return QUEST_STATUS_NONE;
 }
@@ -16328,10 +16359,12 @@ void Player::_LoadBGData(PreparedQueryResult result)
 
     Field* fields = result->Fetch();
     // Expecting only one row
-    /* bgInstanceID, bgTeam, x, y, z, o, map, taxi[0], taxi[1], mountSpell */
+    //             0         1      2       3       4       5       6          7           8          9
+    // SELECT instance_id, team, join_x, join_y, join_z, join_o, join_map, taxi_start, taxi_end, mount_spell FROM character_battleground_data WHERE guid = ?
+
     m_bgData.bgInstanceID = fields[0].GetUInt32();
-    m_bgData.bgTeam       = fields[1].GetUInt32();
-    m_bgData.joinPos      = WorldLocation(fields[6].GetUInt32(),    // Map
+    m_bgData.bgTeam       = fields[1].GetUInt16();
+    m_bgData.joinPos      = WorldLocation(fields[6].GetUInt16(),    // Map
                                           fields[2].GetFloat(),     // X
                                           fields[3].GetFloat(),     // Y
                                           fields[4].GetFloat(),     // Z
@@ -16353,7 +16386,7 @@ bool Player::LoadPositionFromDB(uint32& mapid, float& x,float& y,float& z,float&
     y = fields[1].GetFloat();
     z = fields[2].GetFloat();
     o = fields[3].GetFloat();
-    mapid = fields[4].GetUInt32();
+    mapid = fields[4].GetUInt16();
     in_flight = !fields[5].GetString().empty();
 
     return true;
@@ -16624,6 +16657,7 @@ bool Player::_LoadFromDB(uint32 guid, SQLQueryHolder * holder, PreparedQueryResu
     SetUInt16Value(PLAYER_FIELD_KILLS, 1, fields[47].GetUInt16());
 
     _LoadBoundInstances(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOADBOUNDINSTANCES));
+    _LoadInstanceTimeRestrictions(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOADINSTANCELOCKTIMES));
     _LoadBGData(holder->GetPreparedResult(PLAYER_LOGIN_QUERY_LOADBGDATA));
 
     MapEntry const * mapEntry = sMapStore.LookupEntry(mapId);
@@ -16840,7 +16874,7 @@ bool Player::_LoadFromDB(uint32 guid, SQLQueryHolder * holder, PreparedQueryResu
     SaveRecallPosition();
 
     time_t now = time(NULL);
-    time_t logoutTime = time_t(fields[22].GetUInt64());
+    time_t logoutTime = time_t(fields[22].GetUInt32());
 
     // since last logout (in seconds)
     uint32 time_diff = uint32(now - logoutTime); //uint64 is excessive for a time_diff in seconds.. uint32 allows for 136~ year difference.
@@ -16860,7 +16894,7 @@ bool Player::_LoadFromDB(uint32 guid, SQLQueryHolder * holder, PreparedQueryResu
     m_Played_time[PLAYED_TIME_LEVEL]= fields[20].GetUInt32();
 
     m_resetTalentsCost = fields[24].GetUInt32();
-    m_resetTalentsTime = time_t(fields[25].GetUInt64());
+    m_resetTalentsTime = time_t(fields[25].GetUInt32());
 
     // reserve some flags
     uint32 old_safe_flags = GetUInt32Value(PLAYER_FLAGS) & (PLAYER_FLAGS_HIDE_CLOAK | PLAYER_FLAGS_HIDE_HELM);
@@ -16870,16 +16904,16 @@ bool Player::_LoadFromDB(uint32 guid, SQLQueryHolder * holder, PreparedQueryResu
 
     m_taxi.LoadTaxiMask(fields[17].GetCString());                // must be before InitTaxiNodesForLevel
 
-    uint32 extraflags = fields[31].GetUInt32();
+    uint32 extraflags = fields[31].GetUInt16();
 
-    m_atLoginFlags = fields[33].GetUInt32();
+    m_atLoginFlags = fields[33].GetUInt16();
 
     // Honor system
     // Update Honor kills data
     m_lastHonorUpdateTime = logoutTime;
     UpdateHonorFields();
 
-    m_deathExpireTime = (time_t)fields[36].GetUInt64();
+    m_deathExpireTime = time_t(fields[36].GetUInt32());
     if (m_deathExpireTime > now+MAX_DEATH_COUNT*DEATH_EXPIRE_STEP)
         m_deathExpireTime = now+MAX_DEATH_COUNT*DEATH_EXPIRE_STEP-1;
 
@@ -17170,7 +17204,11 @@ void Player::_LoadAuras(PreparedQueryResult result, uint32 timediff)
 {
     sLog->outDebug("Loading auras for player %u",GetGUIDLow());
 
-    //QueryResult *result = CharacterDatabase.PQuery("SELECT caster_guid,spell,effect_mask,recalculate_mask,stackcount,amount0,amount1,amount2,base_amount0,base_amount1,base_amount2,maxduration,remaintime,remaincharges FROM character_aura WHERE guid = '%u'",GetGUIDLow());
+    /*                                                           0       1        2         3                 4         5      6       7         8              9            10
+    QueryResult *result = CharacterDatabase.PQuery("SELECT caster_guid,spell,effect_mask,recalculate_mask,stackcount,amount0,amount1,amount2,base_amount0,base_amount1,base_amount2,
+                                                        11          12          13
+                                                    maxduration,remaintime,remaincharges FROM character_aura WHERE guid = '%u'",GetGUIDLow()); 
+    */
 
     if (result)
     {
@@ -17382,7 +17420,7 @@ void Player::_LoadInventory(PreparedQueryResult result, uint32 timediff)
                         Field* fields2 = result2->Fetch();
                         item->SetRefundRecipient(fields2[0].GetUInt32());
                         item->SetPaidMoney(fields2[1].GetUInt32());
-                        item->SetPaidExtendedCost(fields2[2].GetUInt32());
+                        item->SetPaidExtendedCost(fields2[2].GetUInt16());
                         AddRefundReference(item->GetGUIDLow());
                     }
                 }
@@ -17591,8 +17629,8 @@ void Player::_LoadMail()
             m->subject = fields[4].GetString();
             m->body = fields[5].GetString();
             bool has_items = fields[6].GetBool();
-            m->expire_time = (time_t)fields[7].GetUInt64();
-            m->deliver_time = (time_t)fields[8].GetUInt64();
+            m->expire_time = time_t(fields[7].GetUInt32());
+            m->deliver_time = time_t(fields[8].GetUInt32());
             m->money = fields[9].GetUInt32();
             m->COD = fields[10].GetUInt32();
             m->checked = fields[11].GetUInt32();
@@ -17632,8 +17670,10 @@ void Player::_LoadQuestStatus(PreparedQueryResult result)
 {
     uint16 slot = 0;
 
-    ////                                                     0      1       3         4      5          6          7          8          9           10          11          12
-    //QueryResult *result = CharacterDatabase.PQuery("SELECT quest, status, explored, timer, mobcount1, mobcount2, mobcount3, mobcount4, itemcount1, itemcount2, itemcount3, itemcount4 FROM character_queststatus WHERE guid = '%u'", GetGUIDLow());
+    ////                                                       0      1       2        3        4           5          6         7           8           9           10
+    //QueryResult *result = CharacterDatabase.PQuery("SELECT quest, status, explored, timer, mobcount1, mobcount2, mobcount3, mobcount4, itemcount1, itemcount2, itemcount3, 
+    //                                                    11 
+    //                                                itemcount4 FROM character_queststatus WHERE guid = '%u'", GetGUIDLow());
 
     if (result)
     {
@@ -17660,7 +17700,7 @@ void Player::_LoadQuestStatus(PreparedQueryResult result)
 
                 questStatusData.m_explored = (fields[2].GetUInt8() > 0);
 
-                time_t quest_time = time_t(fields[4].GetUInt64());
+                time_t quest_time = time_t(fields[4].GetUInt32());
 
                 if (pQuest->HasFlag(QUEST_TRINITY_FLAGS_TIMED) && !GetQuestRewardStatus(quest_id))
                 {
@@ -17767,7 +17807,7 @@ void Player::_LoadDailyQuestStatus(PreparedQueryResult result)
                 if (qQuest->IsDFQuest())
                 {
                     m_DFQuests.insert(qQuest->GetQuestId());
-                    m_lastDailyQuestTime = (time_t)fields[1].GetUInt64();
+                    m_lastDailyQuestTime = time_t(fields[1].GetUInt32());
                     continue;
                 }
             }
@@ -17903,11 +17943,11 @@ void Player::_LoadBoundInstances(PreparedQueryResult result)
             Field* fields = result->Fetch();
 
             bool perm = fields[1].GetBool();
-            uint32 mapId = fields[2].GetUInt32();
+            uint32 mapId = fields[2].GetUInt16();
             uint32 instanceId = fields[0].GetUInt32();
             uint8 difficulty = fields[3].GetUInt8();
 
-            time_t resetTime = (time_t)fields[4].GetUInt64();
+            time_t resetTime = time_t(fields[4].GetUInt32());
             // the resettime for normal instances is only saved when the InstanceSave is unloaded
             // so the value read from the DB may be wrong here but only if the InstanceSave is loaded
             // and in that case it is not used
@@ -17986,7 +18026,8 @@ void Player::UnbindInstance(BoundInstancesMap::iterator &itr, Difficulty difficu
 {
     if (itr != m_boundInstances[difficulty].end())
     {
-        if (!unload) CharacterDatabase.PExecute("DELETE FROM character_instance WHERE guid = '%u' AND instance = '%u'", GetGUIDLow(), itr->second.save->GetInstanceId());
+        if (!unload)
+            CharacterDatabase.PExecute("DELETE FROM character_instance WHERE guid = '%u' AND instance = '%u'", GetGUIDLow(), itr->second.save->GetInstanceId());
         itr->second.save->RemovePlayer(this);               // save can become invalid
         m_boundInstances[difficulty].erase(itr++);
     }
@@ -18027,6 +18068,14 @@ InstancePlayerBind* Player::BindToInstance(InstanceSave *save, bool permanent, b
     }
     else
         return NULL;
+}
+
+void Player::BindToInstance()
+{
+    WorldPacket data(SMSG_INSTANCE_SAVE_CREATED, 4);
+    data << uint32(0);
+    GetSession()->SendPacket(&data);
+    BindToInstance(_pendingBind, true);
 }
 
 void Player::SendRaidInfo()
@@ -18256,7 +18305,7 @@ bool Player::_LoadHomeBind(PreparedQueryResult result)
     {
         Field* fields = result->Fetch();
 
-        m_homebindMapId = fields[0].GetUInt32();
+        m_homebindMapId = fields[0].GetUInt16();
         m_homebindAreaId = fields[1].GetUInt16();
         m_homebindX = fields[2].GetFloat();
         m_homebindY = fields[3].GetFloat();
@@ -18371,12 +18420,12 @@ void Player::SaveToDB()
     ss << m_Played_time[PLAYED_TIME_LEVEL] << ", ";
 
     ss << finiteAlways(m_rest_bonus) << ", ";
-    ss << (uint64)time(NULL) << ", ";
+    ss << uint32(time(NULL)) << ", ";
     ss << (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_RESTING) ? 1 : 0) << ", ";
                                                             //save, far from tavern/city
                                                             //save, but in tavern/city
     ss << m_resetTalentsCost << ", ";
-    ss << (uint64)m_resetTalentsTime << ", ";
+    ss << uint32(m_resetTalentsTime) << ", ";
 
     ss << finiteAlways(m_movementInfo.t_pos.GetPositionX()) << ", ";
     ss << finiteAlways(m_movementInfo.t_pos.GetPositionY()) << ", ";
@@ -18396,7 +18445,7 @@ void Player::SaveToDB()
 
     ss << GetZoneId() << ", ";
 
-    ss << (uint64)m_deathExpireTime << ", '";
+    ss << uint32(m_deathExpireTime) << ", '";
 
     ss << m_taxi.SaveTaxiDestinationsToString() << "', ";
 
@@ -18471,6 +18520,7 @@ void Player::SaveToDB()
     _SaveEquipmentSets(trans);
     GetSession()->SaveTutorialsData(trans);                 // changed only while character in game
     _SaveGlyphs(trans);
+    _SaveInstanceTimeRestrictions(trans);
     _SaveCurrency();
 
     // check if stats should only be saved on logout
@@ -18674,7 +18724,7 @@ void Player::_SaveInventory(SQLTransaction& trans)
         {
             case ITEM_NEW:
             case ITEM_CHANGED:
-                stmt = CharacterDatabase.GetPreparedStatement(item->GetState() == ITEM_NEW ? CHAR_ADD_INVENTORY_ITEM : CHAR_UPDATE_INVENTORY_ITEM);
+                stmt = CharacterDatabase.GetPreparedStatement(item->GetState() == ITEM_NEW ? CHAR_ADD_INVENTORY_ITEM : CHAR_REP_INVENTORY_ITEM);
                 stmt->setUInt32(0, lowGuid);
                 stmt->setUInt32(1, bag_guid);
                 stmt->setUInt8 (2, item->GetSlot());
@@ -23218,7 +23268,7 @@ void Player::RemoveGlobalCooldown(SpellEntry const *spellInfo)
 uint32 Player::GetRuneBaseCooldown(uint8 index)
 {
     uint8 rune = GetBaseRune(index);
-    uint32 cooldown = RUNE_COOLDOWN;
+    uint32 cooldown = RUNE_BASE_COOLDOWN;
 
     AuraEffectList const& regenAura = GetAuraEffectsByType(SPELL_AURA_MOD_POWER_REGEN_PERCENT);
     for (AuraEffectList::const_iterator i = regenAura.begin();i != regenAura.end(); ++i)
@@ -24439,15 +24489,15 @@ void Player::_LoadGlyphs(PreparedQueryResult result)
         if (spec >= m_specsCount)
             continue;
 
-        m_Glyphs[spec][0] = fields[1].GetUInt32();
-        m_Glyphs[spec][1] = fields[2].GetUInt32();
-        m_Glyphs[spec][2] = fields[3].GetUInt32();
-        m_Glyphs[spec][3] = fields[4].GetUInt32();
-        m_Glyphs[spec][4] = fields[5].GetUInt32();
-        m_Glyphs[spec][5] = fields[6].GetUInt32();
-        m_Glyphs[spec][6] = fields[7].GetUInt32();
-        m_Glyphs[spec][7] = fields[8].GetUInt32();
-        m_Glyphs[spec][8] = fields[9].GetUInt32();
+        m_Glyphs[spec][0] = fields[1].GetUInt16();
+        m_Glyphs[spec][1] = fields[2].GetUInt16();
+        m_Glyphs[spec][2] = fields[3].GetUInt16();
+        m_Glyphs[spec][3] = fields[4].GetUInt16();
+        m_Glyphs[spec][4] = fields[5].GetUInt16();
+        m_Glyphs[spec][5] = fields[6].GetUInt16();
+        m_Glyphs[spec][6] = fields[7].GetUInt16();
+        m_Glyphs[spec][7] = fields[8].GetUInt16();
+        m_Glyphs[spec][8] = fields[9].GetUInt16();
     }
     while (result->NextRow());
 }
@@ -24577,6 +24627,10 @@ void Player::ActivateSpec(uint8 spec)
     CharacterDatabase.CommitTransaction(trans);
 
     UnsummonPetTemporaryIfAny();
+
+    // TO-DO: We need more research to know what happens with warlock's reagent
+    if (Pet* pet = GetPet())
+        RemovePet(pet, PET_SLOT_ACTUAL_PET_SLOT, true);
 
     ClearComboPointHolders();
     ClearAllReactives();
@@ -24711,10 +24765,6 @@ void Player::ActivateSpec(uint8 spec)
         if (PreparedQueryResult result = CharacterDatabase.Query(stmt))
             _LoadActions(result);
     }
-
-    ResummonPetTemporaryUnSummonedIfAny();     
-    if (Pet* pPet = GetPet())     
-        pPet->InitTalentForLevel();  // not processed with aura removal because pet was not active
 
     SendActionButtons(1);
 
@@ -24913,6 +24963,8 @@ void Player::RefundItem(Item *item)
     }
     GetSession()->SendPacket(&data);
 
+    uint32 moneyRefund = item->GetPaidMoney();  // item-> will be invalidated in DestroyItem
+
     // Delete any references to the refund data
     item->SetNotRefundable(this);
 
@@ -24935,7 +24987,7 @@ void Player::RefundItem(Item *item)
     }
 
     // Grant back money
-    if (uint32 moneyRefund = item->GetPaidMoney())
+    if (moneyRefund)
         ModifyMoney(moneyRefund);
 
 }
@@ -24973,6 +25025,44 @@ float Player::GetAverageItemLevel()
     }
 
     return ((float)sum) / count;
+}
+
+void Player::_LoadInstanceTimeRestrictions(PreparedQueryResult result)
+{
+    if (!result)
+        return;
+
+    do 
+    {
+        Field* fields = result->Fetch();
+        _instanceResetTimes.insert(InstanceTimeMap::value_type(fields[0].GetUInt32(), fields[1].GetUInt64()));
+    } while (result->NextRow());
+}
+
+void Player::_SaveInstanceTimeRestrictions(SQLTransaction& trans)
+{
+    if (_instanceResetTimes.empty())
+        return;
+
+    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_ACCOUNT_INSTANCE_LOCK_TIMES);
+    stmt->setUInt32(0, GetSession()->GetAccountId());
+    trans->Append(stmt);
+
+    for (InstanceTimeMap::const_iterator itr = _instanceResetTimes.begin(); itr != _instanceResetTimes.end(); ++itr)
+    {
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_ADD_ACCOUNT_INSTANCE_LOCK_TIMES);
+        stmt->setUInt32(0, GetSession()->GetAccountId());
+        stmt->setUInt32(1, itr->first);
+        stmt->setUInt64(2, itr->second);
+        trans->Append(stmt);
+    }
+}
+
+void Player::SendClearFocus(Unit* target)
+{
+    WorldPacket data(SMSG_BREAK_TARGET, target->GetPackGUID().size());
+    data.append(target->GetPackGUID());
+    GetSession()->SendPacket(&data);
 }
 
 void Player::SetInGuild(uint32 GuildId)

@@ -1028,8 +1028,8 @@ void Aura::HandleAuraSpecificMods(AuraApplication const * aurApp, Unit * caster,
                         if (target->GetTypeId() == TYPEID_PLAYER)
                             if (GameObject* obj = target->GetGameObject(48018))
                 {
-                  target->ToPlayer()->TeleportTo(obj->GetMapId(),obj->GetPositionX(),obj->GetPositionY(),obj->GetPositionZ(),obj->GetOrientation());
-                  target->ToPlayer()->RemoveMovementImpairingAuras();
+                  target->NearTeleportTo(obj->GetPositionX(), obj->GetPositionY(), obj->GetPositionZ(), obj->GetOrientation());
+                  target->RemoveMovementImpairingAuras();
                 }
                         break;
                 }
@@ -1462,6 +1462,12 @@ void Aura::HandleAuraSpecificMods(AuraApplication const * aurApp, Unit * caster,
                         break;
                 }
                 break;
+			case SPELLFAMILY_HUNTER:
+                // Glyph of Freezing Trap
+                if (GetSpellProto()->SpellFamilyFlags[0] & 0x00000008)
+                    if (caster && caster->HasAura(56845))
+                        target->CastSpell(target, 61394, true);
+                break;
         }
     }
 
@@ -1477,6 +1483,32 @@ void Aura::HandleAuraSpecificMods(AuraApplication const * aurApp, Unit * caster,
                     else
                         target->SetReducedThreatPercent(0,0);
                     break;
+            }
+            break;
+        case SPELLFAMILY_DRUID:
+            // Enrage
+            if (GetSpellProto()->SpellFamilyFlags[0] & 0x80000)
+            {
+                if (target->HasAura(70726)) // Druid T10 Feral 4P Bonus
+                {
+                    if (apply)
+                        target->CastSpell(target, 70725, true);
+                }
+                else // armor reduction implemented here
+                    if (AuraEffect * auraEff = target->GetAuraEffectOfRankedSpell(1178, 0))
+                    {
+                        int32 value = auraEff->GetAmount();
+                        int32 mod;
+                        switch (auraEff->GetId())
+                        {
+                            case 1178: mod = 27; break;
+                            case 9635: mod = 16; break;
+                        }
+                        mod = value / 100 * mod;
+                        value = value + (apply ? -mod : mod);
+                        auraEff->ChangeAmount(value);
+                    }
+                break;
             }
             break;
         case SPELLFAMILY_ROGUE:

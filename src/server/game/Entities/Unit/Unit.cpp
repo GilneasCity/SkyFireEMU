@@ -3013,17 +3013,16 @@ void Unit::InterruptSpell(CurrentSpellTypes spellType, bool withDelayed, bool wi
         if (!spell->IsInterruptable())
             return;
 
-        m_currentSpells[spellType] = NULL;
-
         // send autorepeat cancel message for autorepeat spells
         if (spellType == CURRENT_AUTOREPEAT_SPELL)
-        {
-            if (GetTypeId() == TYPEID_PLAYER)
-                this->ToPlayer()->SendAutoRepeatCancel(this);
-        }
+
+        if (GetTypeId() == TYPEID_PLAYER)
+            ToPlayer()->SendAutoRepeatCancel(this);
 
         if (spell->getState() != SPELL_STATE_FINISHED)
             spell->cancel();
+
+        m_currentSpells[spellType] = NULL;
         spell->SetReferencedFromCurrent(false);
     }
 }
@@ -3738,6 +3737,7 @@ void Unit::RemoveAurasDueToSpellBySteal(uint32 spellId, uint64 casterGUID, Unit 
             int32 baseDamage[MAX_SPELL_EFFECTS];
             uint8 effMask = 0;
             uint8 recalculateMask = 0;
+            Unit * caster = aura->GetCaster();
             for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
             {
                 if (aura->GetEffect(i))
@@ -3756,36 +3756,53 @@ void Unit::RemoveAurasDueToSpellBySteal(uint32 spellId, uint64 casterGUID, Unit 
             }
 
             bool stealCharge = aura->GetSpellProto()->AttributesEx7 & SPELL_ATTR7_DISPEL_CHARGES;
+            bool stealStack = aura->GetSpellProto()->StackAmount > 1;
+            int32 dur = (2*MINUTE*IN_MILLISECONDS < aura->GetDuration() || aura->GetDuration() < 0) ? 2*MINUTE*IN_MILLISECONDS : aura->GetDuration();
+
+            if (Aura * newAura = (stealCharge || stealStack) ? stealer->GetAura(aura->GetId(), aura->GetCasterGUID()) : NULL)
+            {
+                if (stealCharge)
+                {
+                    uint8 newCharges = newAura->GetCharges() + 1;
+                    uint8 maxCharges = newAura->GetSpellProto()->procCharges;
+                    // We must be able to steal as much charges as original caster can have
+                    if (caster)
+                        if (Player* modOwner = caster->GetSpellModOwner())
+                            modOwner->ApplySpellMod(aura->GetId(), SPELLMOD_CHARGES, maxCharges);
+                    newAura->SetCharges(maxCharges < newCharges ? maxCharges : newCharges);
+                }
+                else
+                {
+                    uint8 newStacks = newAura->GetStackAmount() + 1;
+                    uint8 maxStacks = newAura->GetSpellProto()->StackAmount;
+                    newAura->SetStackAmount(maxStacks < newStacks ? maxStacks : newStacks);
+                }
+                newAura->SetDuration(dur);
+            }
+            else
+            {
+                bool isSingleTarget = aura->IsSingleTarget() && caster;
+                if (isSingleTarget)
+                    aura->UnregisterSingleTarget();
+                newAura = Aura::TryCreate(aura->GetSpellProto(), effMask, stealer, NULL, &baseDamage[0], NULL, aura->GetCasterGUID());
+                // strange but intended behaviour: Stolen single target auras won't be treated as single targeted
+                if (newAura && isSingleTarget)
+                {
+                    aura->SetIsSingleTarget(true);
+                    caster->GetSingleCastAuras().push_back(aura);
+                    newAura->UnregisterSingleTarget();
+                }
+                if (!newAura)
+                    return;
+                newAura->SetLoadedState(dur, dur, stealCharge ? 1 : aura->GetCharges(), 1, recalculateMask, &damage[0]);
+                newAura->ApplyForTargets();
+            }
 
             if (stealCharge)
                 aura->DropCharge();
             else
                 RemoveAuraFromStack(iter, AURA_REMOVE_BY_ENEMY_SPELL);
 
-
-            if (Aura * newAura = stealCharge ? stealer->GetAura(aura->GetId(), aura->GetCasterGUID()) : NULL)
-            {
-                uint8 newCharges = newAura->GetCharges() + 1;
-                uint8 maxCharges = newAura->GetSpellProto()->procCharges;
-                // We must be able to steal as much charges as original caster can have
-                if (Unit * caster = newAura->GetCaster())
-                    if (Player* modOwner = caster->GetSpellModOwner())
-                        modOwner->ApplySpellMod(aura->GetId(), SPELLMOD_CHARGES, maxCharges);
-                newAura->SetCharges(maxCharges < newCharges ? maxCharges : newCharges);
-            }
-            else
-            {
-                int32 dur = (2*MINUTE*IN_MILLISECONDS < aura->GetDuration() || aura->GetDuration() < 0) ? 2*MINUTE*IN_MILLISECONDS : aura->GetDuration();
-
-                newAura = Aura::TryCreate(aura->GetSpellProto(), effMask, stealer, NULL, &baseDamage[0], NULL, aura->GetCasterGUID());
-                if (!newAura)
-                    return;
-                // strange but intended behaviour: Stolen single target auras won't be treated as single targeted
-                if (newAura->IsSingleTarget())
-                    newAura->UnregisterSingleTarget();
-                newAura->SetLoadedState(dur, dur, stealCharge ? 1 : aura->GetCharges(), aura->GetStackAmount(), recalculateMask, &damage[0]);
-                newAura->ApplyForTargets();
-            }
             return;
         }
         else
@@ -5557,6 +5574,50 @@ bool Unit::HandleDummyAuraProc(Unit *pVictim, uint32 damage, AuraEffect* trigger
                     triggered_spell_id = 70701;
                     break;
                 }
+				// Item - Icecrown 25 Normal Heartpiece
+                case 71880:
+                {
+                    switch (getPowerType())
+                    {
+                        case POWER_MANA:
+                            triggered_spell_id = 71881;
+                            break;
+                        case POWER_RAGE:
+                            triggered_spell_id = 71883;
+                            break;
+                        case POWER_ENERGY:
+                            triggered_spell_id = 71882;
+                            break;
+                        case POWER_RUNIC_POWER:
+                            triggered_spell_id = 71884;
+                            break;
+                        default:
+                            return false;
+                    }
+                    break;
+                }
+                // Item - Icecrown 25 Heroic Heartpiece
+                case 71892:
+                {
+                    switch (getPowerType())
+                    {
+                        case POWER_MANA:
+                            triggered_spell_id = 71888;
+                            break;
+                        case POWER_RAGE:
+                            triggered_spell_id = 71886;
+                            break;
+                        case POWER_ENERGY:
+                            triggered_spell_id = 71887;
+                            break;
+                        case POWER_RUNIC_POWER:
+                            triggered_spell_id = 71885;
+                            break;
+                        default:
+                            return false;
+                    }
+                    break;
+                }
             }
             break;
         }
@@ -6283,6 +6344,18 @@ bool Unit::HandleDummyAuraProc(Unit *pVictim, uint32 damage, AuraEffect* trigger
                     triggered_spell_id = 32747;
                     break;
                 }
+				// Tricks of the Trade
+                case 57934:
+                {
+                    if (Unit* unitTarget = GetMisdirectionTarget())
+                    {
+                         RemoveAura(dummySpell->Id, GetGUID(), 0, AURA_REMOVE_BY_DEFAULT);
+                         CastSpell(this, 59628, true);
+                         CastSpell(unitTarget, 57933, true);
+                         return true;
+                     }
+                     return false;
+                 }
                 // Item - Druid T10 Balance 4P Bonus
                 case 70723:
                 {
@@ -7386,7 +7459,7 @@ bool Unit::HandleDummyAuraProc(Unit *pVictim, uint32 damage, AuraEffect* trigger
                 {
                      if ((*i)->GetCasterGUID() != GetGUID() || (*i)->GetId() != 50536)
                          continue;
-                     basepoints0 += ((*i)->GetAmount() * ((*i)->GetTotalTicks() - ((*i)->GetTickNumber()))) / (*i)->GetTotalTicks();
+                     basepoints0 += (*i)->GetAmount() * ((*i)->GetTotalTicks() - ((*i)->GetTickNumber()));
                      break;
                 }
 
@@ -8080,8 +8153,10 @@ bool Unit::HandleProcTriggerSpell(Unit *pVictim, uint32 damage, AuraEffect* trig
                             sLog->outError("Unit::HandleProcTriggerSpell: Spell %u not handled in BR", auraSpellInfo->Id);
                         return false;
                     }
-                    basepoints0 = damage * triggerAmount / 100 / 3;
+                    basepoints0 = CalculatePctN(int32(damage), triggerAmount) / 3;
                     target = this;
+					if (AuraEffect * aurEff = target->GetAuraEffect(trigger_spell_id, 0))
+                        basepoints0 += aurEff->GetAmount();
                 }
                 break;
             }
@@ -8530,6 +8605,23 @@ bool Unit::HandleProcTriggerSpell(Unit *pVictim, uint32 damage, AuraEffect* trig
         }
         default:
             break;
+    }
+
+	// Sword Specialization
+    if (auraSpellInfo->SpellFamilyName == SPELLFAMILY_GENERIC && auraSpellInfo->SpellIconID == 1462 && procSpell)
+        if (Player * plr = ToPlayer())
+    {
+            if (cooldown && plr->HasSpellCooldown(16459))
+                return false;
+
+            // this required for attacks like Mortal Strike
+            plr->RemoveSpellCooldown(procSpell->Id);
+
+            CastSpell(pVictim, procSpell->Id, true);
+
+            if (cooldown)
+                plr->AddSpellCooldown(16459, 0, time(NULL) + cooldown);
+            return true;
     }
 
     // Blade Barrier
@@ -10345,6 +10437,10 @@ uint32 Unit::SpellDamageBonus(Unit *pVictim, SpellEntry const *spellProto, uint3
             if (spellProto->SpellFamilyFlags[0] & 0x00004000)
                 if (HasAura(200000))
                     DoneTotalMod *= 2;
+            // Shadow Bite (15% increase from each dot)
+            if (spellProto->SpellFamilyFlags[1] & 0x00400000 && isPet() && GetOwner())
+                if (uint8 count = pVictim->GetDoTsByCaster(GetOwnerGUID()))
+                    AddPctN(DoneTotalMod, 15 * count);
         break;
         case SPELLFAMILY_HUNTER:
             // Steady Shot
@@ -10364,6 +10460,36 @@ uint32 Unit::SpellDamageBonus(Unit *pVictim, SpellEntry const *spellProto, uint3
                 if (AuraEffect * aurEff = GetDummyAuraEffect(SPELLFAMILY_DEATHKNIGHT, 196, 0))
                     if (pVictim->GetDiseasesByCaster(owner->GetGUID()) > 0)
                         DoneTotalMod *= (100.0f + aurEff->GetAmount()) / 100.0f;
+
+			// Rune Strike
+            if (spellProto->SpellFamilyFlags[1] & 0x20000000)
+                {
+                    float ApCoeffMod = 1.0f;
+                    // Impurity (dummy effect)
+                    if (GetTypeId() == TYPEID_PLAYER)
+                    {
+                        PlayerSpellMap playerSpells = this->ToPlayer()->GetSpellMap();
+                        for (PlayerSpellMap::const_iterator itr = playerSpells.begin(); itr != playerSpells.end(); ++itr)
+                        {
+                            if (itr->second->state == PLAYERSPELL_REMOVED || itr->second->disabled)
+                                continue;
+                            switch (itr->first)
+                            {
+                                case 49220:
+                                case 49633:
+                                case 49635:
+                                case 49636:
+                                case 49638:
+                                {
+                                    if (const SpellEntry *proto=sSpellStore.LookupEntry(itr->first))
+                                        AddPctN(ApCoeffMod, SpellMgr::CalculateSpellEffectAmount(proto, 0));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    DoneTotalMod += GetTotalAttackPowerValue(BASE_ATTACK) * 0.2 * ApCoeffMod;
+                }
 
             // Impurity (dummy effect)
             if (GetTypeId() == TYPEID_PLAYER)
@@ -10574,6 +10700,10 @@ uint32 Unit::SpellDamageBonus(Unit *pVictim, SpellEntry const *spellProto, uint3
             coeff *= 100.0f;
             modOwner->ApplySpellMod(spellProto->Id, SPELLMOD_BONUS_MULTIPLIER, coeff);
             coeff /= 100.0f;
+			// DoneAdvertisedBenefit should be modified by owner auras
+            if (isPet())
+                modOwner->ApplySpellMod(spellProto->Id, SPELLMOD_ALL_EFFECTS, DoneAdvertisedBenefit);
+
         }
         DoneTotal += int32(DoneAdvertisedBenefit * coeff * coeff2);
     }
@@ -10661,7 +10791,7 @@ int32 Unit::SpellBaseDamageBonusForVictim(SpellSchoolMask schoolMask, Unit *pVic
 bool Unit::isSpellCrit(Unit *pVictim, SpellEntry const *spellProto, SpellSchoolMask schoolMask, WeaponAttackType attackType) const
 {
     // Mobs can't crit with spells.
-    if (IS_CREATURE_GUID(GetGUID()))
+    if (IS_CREATURE_GUID(GetGUID()) && !(GetOwner() && GetOwner()->GetTypeId() == TYPEID_PLAYER))
         return false;
 
     // not critting spell
@@ -10914,6 +11044,9 @@ uint32 Unit::SpellHealingBonus(Unit *pVictim, SpellEntry const *spellProto, uint
 
     // no bonus for heal potions/bandages
     if (spellProto->SpellFamilyName == SPELLFAMILY_POTION)
+        return healamount;
+	// and Warlock's Healthstones      
+    if (spellProto->SpellFamilyName == SPELLFAMILY_WARLOCK && (spellProto->SpellFamilyFlags[0] & 0x10000))
         return healamount;
 
     // Healing Done
@@ -11391,7 +11524,7 @@ bool Unit::IsDamageToThreatSpell(SpellEntry const * spellInfo) const
         case SPELLFAMILY_DEATHKNIGHT:
             if (spellInfo->SpellFamilyFlags[1] == 0x20000000) // Rune Strike
                 return true;
-			if (spellInfo->SpellFamilyFlags[0] == 0x20) // Death and Decay
+			if (spellInfo->SpellFamilyFlags[2] == 0x8) // Death and Decay
                 return true;
             break;
         case SPELLFAMILY_WARRIOR:
@@ -16654,9 +16787,7 @@ void Unit::EnterVehicle(Vehicle *vehicle, int8 seatId, bool byAura)
         WorldPacket data(SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA, 0);
         thisPlr->GetSession()->SendPacket(&data);
 
-        data.Initialize(SMSG_BREAK_TARGET, 7);
-        data.append(vehicle->GetBase()->GetPackGUID());
-        thisPlr->GetSession()->SendPacket(&data);
+        thisPlr->SendClearFocus(vehicle->GetBase());
     }
 
     SetControlled(true, UNIT_STAT_ROOT);

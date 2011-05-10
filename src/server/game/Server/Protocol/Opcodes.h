@@ -548,7 +548,7 @@ enum Opcodes
     CMSG_GMTICKET_GETTICKET                          = 0x0B4C4, // 4.0.6a 13623
     SMSG_GMTICKET_GETTICKET                          = 0x02284, // 4.0.6a 13623
     CMSG_UNLEARN_TALENTS                             = 0x10098, //
-    SMSG_GAMEOBJECT_SPAWN_ANIM_OBSOLETE              = 0x0EDA4, // 4.0.6a 13623
+    SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT              = 0x0EDA4, // 4.0.6a 13623
     SMSG_GAMEOBJECT_DESPAWN_ANIM                     = 0x0BFA8, // 4.0.6a 13623
     MSG_CORPSE_QUERY                                 = 0x0E0C8, // 4.0.6a 13623
     CMSG_GMTICKET_DELETETICKET                       = 0x0FBE4, // 4.0.6a 13623
@@ -1231,7 +1231,7 @@ enum Opcodes
     CMSG_FORCE_UNK2_SPEED_CHANGE_ACK                 = 0x07DE8, // 4.0.6a 13623
     SMSG_MOVE_LEVITATING                             = 0x0B8AC, // 4.0.6a 13623
     SMSG_SPLINE_MOVE_UNKNOWN_1235                    = 0x1021E, //
-    SMSG_SPLINE_MOVE_UNKNOWN_1236                    = 0x03729, // 4.0.6a 13623
+    SMSG_SPLINE_MOVE_UNKNOWN_1236                    = 0x1022F, // 4.0.6a 13623
     CMSG_EQUIPMENT_SET_USE                           = 0x0E8A0, // 4.0.6a 13623
     SMSG_EQUIPMENT_SET_USE_RESULT                    = 0x076AC, // 4.0.6a 13623
     SMSG_UNKNOWN_1240                                = 0x0B8E0, // 4.0.6a 13623
@@ -1267,7 +1267,7 @@ enum Opcodes
     SMSG_CORPSE_NOT_IN_INSTANCE                      = 0x031E4, // 4.0.6a 13623
     CMSG_SET_ALLOW_LOW_LEVEL_RAID1                   = 0x035EC, // 4.0.6a 13623
     CMSG_SET_ALLOW_LOW_LEVEL_RAID2                   = 0x029C4, // 4.0.6a 13623
-    SMSG_CAMERA_SHAKE                                = 0x034A4, // 4.0.6a 13623
+    SMSG_CAMERA_SHAKE                                = 0x1009E, //
     SMSG_UPDATE_ITEM_ENCHANTMENTS                    = 0x020E8, // 4.0.6a 13623
     SMSG_REDIRECT_CLIENT                             = 0x0201B, // 4.0.6a 13623
     CMSG_REDIRECTION_FAILED                          = 0x02D8C, // 4.0.6a 13623 - StrawberryEMU: 0x0509

@@ -441,6 +441,12 @@ void WorldSession::LogoutPlayer(bool Save)
             _player->BuildPlayerRepop();
             _player->RepopAtGraveyard();
         }
+        else if (_player->HasPendingBind())
+        {
+            _player->RepopAtGraveyard();
+            _player->SetPendingBind(NULL, 0);
+        }
+
         //drop a flag if player is carrying it
         if (Battleground *bg = _player->GetBattleground())
             bg->EventPlayerLoggedOut(_player);
@@ -658,7 +664,7 @@ void WorldSession::LoadAccountData(PreparedQueryResult result, uint32 mask)
     do
     {
         Field* fields = result->Fetch();
-        uint32 type = fields[0].GetUInt32();
+        uint32 type = fields[0].GetUInt8();
         if (type >= NUM_ACCOUNT_DATA_TYPES)
         {
             sLog->outError("Table `%s` have invalid account data type (%u), ignore.",
@@ -673,7 +679,7 @@ void WorldSession::LoadAccountData(PreparedQueryResult result, uint32 mask)
             continue;
         }
 
-        m_accountData[type].Time = fields[1].GetUInt32();
+        m_accountData[type].Time = time_t(fields[1].GetUInt32());
         m_accountData[type].Data = fields[2].GetString();
 
     }

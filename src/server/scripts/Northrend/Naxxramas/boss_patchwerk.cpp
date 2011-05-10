@@ -124,8 +124,10 @@ public:
                         //amount of HP within melee distance
                         uint32 MostHP = 0;
                         Unit* pMostHPTarget = NULL;
+
                         std::list<HostileReference*>::const_iterator i = me->getThreatManager().getThreatList().begin();
-                        for (; i != me->getThreatManager().getThreatList().end(); ++i)
+                        int targetCounter = RAID_MODE(2,3); // Picks 2 (3) highest threat targets as Hateful Strike candidates
+                        for (; i != me->getThreatManager().getThreatList().end() && targetCounter > 0; ++i, --targetCounter)
                         {
                             Unit *pTarget = (*i)->getTarget();
                             if (pTarget->isAlive() && pTarget != me->getVictim() && pTarget->GetHealth() > MostHP && me->IsWithinMeleeRange(pTarget))
