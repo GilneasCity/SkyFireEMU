@@ -116,14 +116,14 @@ CREATE TABLE `realmlist` (
   `allowedSecurityLevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `population` float unsigned NOT NULL DEFAULT '0',
   `online` int(11) NOT NULL DEFAULT '0',
-  `gamebuild` int(11) unsigned NOT NULL DEFAULT '13914',
+  `gamebuild` int(11) unsigned NOT NULL DEFAULT '14007',
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_name` (`name`)
 ) ENGINE=MyISAM AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 ROW_FORMAT=DYNAMIC COMMENT='Realm System';
 
 LOCK TABLES `realmlist` WRITE;
 /*!40000 ALTER TABLE `realmlist` DISABLE KEYS */;
-INSERT INTO `realmlist` VALUES (1,'SkyFireEMU','127.0.0.1',8085,0,0,1,0,0,0,13914);
+INSERT INTO `realmlist` VALUES (1,'SkyFireEMU','127.0.0.1',8085,0,0,1,0,0,0,14007);
 /*!40000 ALTER TABLE `realmlist` ENABLE KEYS */;
 UNLOCK TABLES;
 DROP TABLE IF EXISTS `uptime`;
