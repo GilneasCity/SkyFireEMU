@@ -178,7 +178,7 @@ enum Opcodes
     CMSG_CHANNEL_UNMODERATOR                         = 0x10135,  //
     CMSG_CHANNEL_MUTE                                = 0x10136,  //
     CMSG_CHANNEL_UNMUTE                              = 0x10137,  //
-	CMSG_CHANNEL_INVITE                              = 0X1013A,  //
+    CMSG_CHANNEL_INVITE                              = 0X1013A,  //
     CMSG_CHANNEL_KICK                                = 0x10138,  //
     CMSG_CHANNEL_ROSTER_INFO                         = 0x10139,  //
     CMSG_CHANNEL_BAN                                 = 0x10140,  //
@@ -752,7 +752,7 @@ enum Opcodes
     SMSG_WARDEN_DATA                                 = 0x10709,  //
     CMSG_WARDEN_DATA                                 = 0x10710,  //
     SMSG_GROUP_JOINED_BATTLEGROUND                   = 0x10711,  //
-	CMSG_BATTLEGROUND_PLAYER_POSITIONS               = 0x10712,  //
+    CMSG_BATTLEGROUND_PLAYER_POSITIONS               = 0x10712,  //
     SMSG_BATTLEGROUND_PLAYER_POSITIONS               = 0x10713,  //
     CMSG_PET_STOP_ATTACK                             = 0x10714,  //
     SMSG_BINDER_CONFIRM                              = 0x10715,  //
